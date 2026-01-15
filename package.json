@@ -1,0 +1,9 @@
+{
+  "name": "notion-routines",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@notionhq/client": "^2.2.15",
+    "luxon": "^3.5.0"
+  }
+}
