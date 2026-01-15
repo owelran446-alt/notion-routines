@@ -15,7 +15,8 @@ jobs:
           node-version: "20"
       - run: npm install
       - run: node scripts/generate_today.mjs
-        env:
-          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
-          TEMPLATES_DB_ID: ${{ secrets.TEMPLATES_DB_ID }}
-          LOG_DB_ID: ${{ secrets.LOG_DB_ID }}
+env:
+  NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+  TEMPLATES_DB_ID: ${{ secrets.TEMPLATES_DB_ID }}
+  LOG_DB_ID: ${{ secrets.LOG_DB_ID }}
+
