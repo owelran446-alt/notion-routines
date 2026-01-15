@@ -22,10 +22,10 @@ function norm(s) {
 }
 
 const now = DateTime.now().setZone(ZONE);
-// if (now.toFormat("HH:mm") !== RUN_TIME) {
-//  console.log("Not time yet");
-//  process.exit(0);
-// }
+if (now.toFormat("HH:mm") !== RUN_TIME) {
+ console.log("Not time yet");
+ process.exit(0);
+}
 
 const todayISO = now.toISODate();
 
