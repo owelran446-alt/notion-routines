@@ -8,13 +8,18 @@ const LOG_DB_ID = process.env.LOG_DB_ID;
 
 const PROP_ACTIVE = "Active";
 const PROP_FREQ = "d/w";
-const PROP_DAYS = "Days";
+const PROP_DAYS = "ימים";
+
 const PROP_HABIT = "Habit";
-const PROP_DATE = "Date";
-const PROP_COMPLETED = "Completed";
+const PROP_DATE = "תאריך";
+const PROP_COMPLETED = "צ'ק";
 
 const ZONE = "Asia/Jerusalem";
 const RUN_TIME = "07:30";
+
+function norm(s) {
+  return (s || "").toString().trim().replace(/['׳״]/g, "");
+}
 
 const now = DateTime.now().setZone(ZONE);
 if (now.toFormat("HH:mm") !== RUN_TIME) {
@@ -23,10 +28,22 @@ if (now.toFormat("HH:mm") !== RUN_TIME) {
 }
 
 const todayISO = now.toISODate();
-const weekday = now.toFormat("ccc"); // Mon Tue Wed
 
-function norm(s) {
-  return (s || "").toLowerCase().replace(/['׳״]/g, "");
+// Luxon weekday: 1=Mon ... 7=Sun
+const hebDayByLuxon = {
+  7: "ראשון",
+  1: "שני",
+  2: "שלישי",
+  3: "רביעי",
+  4: "חמישי",
+  5: "שישי",
+  6: "שבת"
+};
+
+const todayHebDay = hebDayByLuxon[now.weekday];
+if (!todayHebDay) {
+  console.log("Could not map weekday");
+  process.exit(1);
 }
 
 async function queryAll(db, filter) {
@@ -44,6 +61,7 @@ async function queryAll(db, filter) {
   return results;
 }
 
+// existing logs today (duplicate protection)
 const logsToday = await queryAll(LOG_DB_ID, {
   property: PROP_DATE,
   date: { equals: todayISO }
@@ -51,11 +69,13 @@ const logsToday = await queryAll(LOG_DB_ID, {
 
 const existing = new Set();
 for (const l of logsToday) {
-  for (const r of l.properties[PROP_HABIT].relation) {
-    existing.add(r.id);
+  const rel = l.properties?.[PROP_HABIT];
+  if (rel?.type === "relation") {
+    for (const r of rel.relation || []) existing.add(r.id);
   }
 }
 
+// active templates
 const templates = await queryAll(TEMPLATES_DB_ID, {
   property: PROP_ACTIVE,
   checkbox: { equals: true }
@@ -64,12 +84,13 @@ const templates = await queryAll(TEMPLATES_DB_ID, {
 for (const t of templates) {
   if (existing.has(t.id)) continue;
 
-  const freq = t.properties[PROP_FREQ].select?.name;
-  if (freq === "Daily") {
-    // ok
-  } else if (freq === "Weekly") {
-    const days = t.properties[PROP_DAYS].multi_select.map(d => norm(d.name));
-    if (!days.includes(norm(weekday))) continue;
+  const freq = t.properties?.[PROP_FREQ]?.select?.name;
+
+  if (freq === "יומי") {
+    // due today
+  } else if (freq === "שבועי") {
+    const days = (t.properties?.[PROP_DAYS]?.multi_select || []).map(x => norm(x.name));
+    if (!days.includes(norm(todayHebDay))) continue;
   } else {
     continue;
   }
@@ -83,3 +104,5 @@ for (const t of templates) {
     }
   });
 }
+
+console.log("Done");
