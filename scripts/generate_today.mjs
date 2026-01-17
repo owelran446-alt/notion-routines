@@ -22,10 +22,12 @@ function norm(s) {
 }
 
 const now = DateTime.now().setZone(ZONE);
-if (now.toFormat("HH:mm") !== RUN_TIME) {
- console.log("Not time yet");
- process.exit(0);
+const runAt = DateTime.fromISO(now.toISODate() + "T07:00", { zone: ZONE });
+if (now < runAt) {
+  console.log("Too early");
+  process.exit(0);
 }
+
 
 const todayISO = now.toISODate();
 
