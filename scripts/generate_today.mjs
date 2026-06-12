@@ -84,9 +84,21 @@ const templates = await queryAll(TEMPLATES_DB_ID, {
 });
 
 for (const t of templates) {
-  if (existing.has(t.id)) continue;
+  const titleProp = Object.values(t.properties).find(p => p.type === "title");
+  const name = titleProp?.title?.[0]?.plain_text || "NO NAME";
+
+  console.log("Checking:", name);
+
+  if (existing.has(t.id)) {
+    console.log("Skipped duplicate:", name);
+    continue;
+  }
 
   const freq = t.properties?.[PROP_FREQ]?.select?.name;
+  console.log("Frequency:", freq);
+
+  const daysDebug = t.properties?.[PROP_DAYS]?.multi_select?.map(x => x.name) || [];
+  console.log("Days:", daysDebug);
 
   if (freq === "יומי") {
     // due today
