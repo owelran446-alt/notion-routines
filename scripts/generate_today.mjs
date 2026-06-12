@@ -104,7 +104,10 @@ for (const t of templates) {
     // due today
   } else if (freq === "שבועי") {
     const days = (t.properties?.[PROP_DAYS]?.multi_select || []).map(x => norm(x.name));
-    if (!days.includes(norm(todayHebDay))) continue;
+    if (!days.includes(norm(todayHebDay))) {
+  console.log("Skipped wrong day:", name, "today is", todayHebDay);
+  continue;
+}
   } else {
     continue;
   }
