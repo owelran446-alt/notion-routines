@@ -15,23 +15,21 @@ const PROP_DATE = "תאריך";
 const PROP_COMPLETED = "צ'ק";
 
 const ZONE = "Asia/Jerusalem";
-const RUN_TIME = "07:30";
 
 function norm(s) {
   return (s || "").toString().trim().replace(/['׳״]/g, "");
 }
 
 const now = DateTime.now().setZone(ZONE);
+
 const runAt = DateTime.fromISO(now.toISODate() + "T07:00", { zone: ZONE });
 if (now < runAt) {
   console.log("Too early");
   process.exit(0);
 }
 
-
 const todayISO = now.toISODate();
 
-// Luxon weekday: 1=Mon ... 7=Sun
 const hebDayByLuxon = {
   7: "ראשון",
   1: "שני",
@@ -42,86 +40,145 @@ const hebDayByLuxon = {
   6: "שבת"
 };
 
+const dayOffsetFromSunday = {
+  ראשון: 0,
+  שני: 1,
+  שלישי: 2,
+  רביעי: 3,
+  חמישי: 4,
+  שישי: 5,
+  שבת: 6
+};
+
 const todayHebDay = hebDayByLuxon[now.weekday];
-if (!todayHebDay) {
-  console.log("Could not map weekday");
-  process.exit(1);
-}
+const isSunday = todayHebDay === "ראשון";
+
+const daysSinceSunday = now.weekday === 7 ? 0 : now.weekday;
+const weekStart = now.startOf("day").minus({ days: daysSinceSunday });
+const weekEnd = weekStart.plus({ days: 6 });
+
+const weekStartISO = weekStart.toISODate();
+const weekEndISO = weekEnd.toISODate();
+
+console.log("Today:", todayISO, todayHebDay);
+console.log("Week:", weekStartISO, "to", weekEndISO);
 
 async function queryAll(db, filter) {
   let results = [];
   let cursor;
+
   do {
     const r = await notion.databases.query({
       database_id: db,
       filter,
       start_cursor: cursor
     });
+
     results.push(...r.results);
     cursor = r.next_cursor;
   } while (cursor);
+
   return results;
 }
 
-// existing logs today (duplicate protection)
-const logsToday = await queryAll(LOG_DB_ID, {
-  property: PROP_DATE,
-  date: { equals: todayISO }
+function getPageTitle(page) {
+  const titleProp = Object.values(page.properties).find(p => p.type === "title");
+  return titleProp?.title?.[0]?.plain_text || "NO NAME";
+}
+
+async function createLogIfMissing(templatePage, dateISO, existing) {
+  const key = `${templatePage.id}|${dateISO}`;
+  const name = getPageTitle(templatePage);
+
+  if (existing.has(key)) {
+    console.log("Skipped duplicate:", name, dateISO);
+    return;
+  }
+
+  await notion.pages.create({
+    parent: { database_id: LOG_DB_ID },
+    properties: {
+      [PROP_HABIT]: { relation: [{ id: templatePage.id }] },
+      [PROP_DATE]: { date: { start: dateISO } },
+      [PROP_COMPLETED]: { checkbox: false }
+    }
+  });
+
+  existing.add(key);
+  console.log("Created:", name, dateISO);
+}
+
+// Existing logs for this week
+const logsThisWeek = await queryAll(LOG_DB_ID, {
+  and: [
+    {
+      property: PROP_DATE,
+      date: { on_or_after: weekStartISO }
+    },
+    {
+      property: PROP_DATE,
+      date: { on_or_before: weekEndISO }
+    }
+  ]
 });
 
 const existing = new Set();
-for (const l of logsToday) {
-  const rel = l.properties?.[PROP_HABIT];
-  if (rel?.type === "relation") {
-    for (const r of rel.relation || []) existing.add(r.id);
+
+for (const logPage of logsThisWeek) {
+  const rel = logPage.properties?.[PROP_HABIT];
+  const date = logPage.properties?.[PROP_DATE]?.date?.start;
+
+  if (rel?.type === "relation" && date) {
+    for (const r of rel.relation || []) {
+      existing.add(`${r.id}|${date}`);
+    }
   }
 }
 
-// active templates
+// Active templates
 const templates = await queryAll(TEMPLATES_DB_ID, {
   property: PROP_ACTIVE,
   checkbox: { equals: true }
 });
 
 for (const t of templates) {
-  const titleProp = Object.values(t.properties).find(p => p.type === "title");
-  const name = titleProp?.title?.[0]?.plain_text || "NO NAME";
+  const name = getPageTitle(t);
+  const freq = t.properties?.[PROP_FREQ]?.select?.name;
 
   console.log("Checking:", name);
-
-  if (existing.has(t.id)) {
-    console.log("Skipped duplicate:", name);
-    continue;
-  }
-
-  const freq = t.properties?.[PROP_FREQ]?.select?.name;
   console.log("Frequency:", freq);
 
-  const daysDebug = t.properties?.[PROP_DAYS]?.multi_select?.map(x => x.name) || [];
-  console.log("Days:", daysDebug);
-
   if (freq === "יומי") {
-    // due today
-  } else if (freq === "שבועי") {
-    const days = (t.properties?.[PROP_DAYS]?.multi_select || []).map(x => norm(x.name));
-    if (!days.includes(norm(todayHebDay))) {
-  console.log("Skipped wrong day:", name, "today is", todayHebDay);
-  continue;
-}
-  } else {
+    await createLogIfMissing(t, todayISO, existing);
     continue;
   }
 
-  await notion.pages.create({
-    parent: { database_id: LOG_DB_ID },
-    properties: {
-      [PROP_HABIT]: { relation: [{ id: t.id }] },
-      [PROP_DATE]: { date: { start: todayISO } },
-      [PROP_COMPLETED]: { checkbox: false }
+  if (freq === "שבועי") {
+    if (!isSunday) {
+      console.log("Skipped weekly because today is not Sunday:", name);
+      continue;
     }
-  });
 
-  console.log("Created:", name);
+    const days = t.properties?.[PROP_DAYS]?.multi_select || [];
+    console.log("Weekly days:", days.map(d => d.name));
+
+    for (const d of days) {
+      const dayName = norm(d.name);
+      const offset = dayOffsetFromSunday[dayName];
+
+      if (offset === undefined) {
+        console.log("Unknown day:", d.name, "for", name);
+        continue;
+      }
+
+      const targetDate = weekStart.plus({ days: offset }).toISODate();
+      await createLogIfMissing(t, targetDate, existing);
+    }
+
+    continue;
+  }
+
+  console.log("Skipped unknown frequency:", name, freq);
 }
 
 console.log("Done");
