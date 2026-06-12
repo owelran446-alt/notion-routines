@@ -120,6 +120,8 @@ for (const t of templates) {
       [PROP_COMPLETED]: { checkbox: false }
     }
   });
+
+  console.log("Created:", name);
 }
 
 console.log("Done");
