@@ -51,7 +51,7 @@ const dayOffsetFromSunday = {
 };
 
 const todayHebDay = hebDayByLuxon[now.weekday];
-const isSunday = todayHebDay === "ראשון";
+const isSunday = true;
 
 const daysSinceSunday = now.weekday === 7 ? 0 : now.weekday;
 const weekStart = now.startOf("day").minus({ days: daysSinceSunday });
